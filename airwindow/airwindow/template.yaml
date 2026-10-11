@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AirWindow - hour-by-hour plan for when to open windows, exercise and commute (Air track)
+
+Parameters:
+  BedrockModelId:
+    Type: String
+    Default: apac.amazon.nova-lite-v1:0
+    Description: Bedrock model or inference-profile ID you have access to in this region (check the Bedrock console).
+  UseBedrock:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  TinyFishKeyParam:
+    Type: String
+    Default: /airwindow/tinyfish-api-key
+    Description: Name of the SSM SecureString parameter holding your TinyFish API key.
+  RefreshSchedule:
+    Type: String
+    Default: rate(3 hours)
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 20
+    CodeUri: src/
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref Table
+        TOPIC_ARN: !Ref AlertTopic
+        USE_BEDROCK: !Ref UseBedrock
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+        TINYFISH_KEY_PARAM: !Ref TinyFishKeyParam
+
+Resources:
+  # Cache + watch-list + de-dup records. Pay-per-request; items expire via TTL.
+  Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  # Email alerts. Subscribers use filter policies (city + audience).
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: AirWindow alerts
+
+  # Public front door, with throttling so a burst cannot run up the bill.
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: api_handler.handler
+      Description: Serves the web page and /api/plan, /api/subscribe
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref Table
+        - Statement:
+            - Effect: Allow
+              Action: sns:Subscribe
+              Resource: !Ref AlertTopic
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: "*"   # tighten to your model / inference-profile ARNs for production
+      Events:
+        Page:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: /, Method: GET}
+        Health:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: /api/health, Method: GET}
+        Plan:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: /api/plan, Method: GET}
+        Subscribe:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: /api/subscribe, Method: POST}
+
+  RefreshFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: refresh_handler.handler
+      Description: Scheduled - TinyFish station check, forecast refresh, SNS alerts
+      Timeout: 300
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref Table
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt AlertTopic.TopicName
+        - Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${TinyFishKeyParam}
+      Events:
+        Schedule:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref RefreshSchedule
+
+Outputs:
+  AppUrl:
+    Description: Open this in your browser
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/
+  AlertTopicArn:
+    Value: !Ref AlertTopic

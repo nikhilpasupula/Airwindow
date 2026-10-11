@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AirWindow – when to open your windows, walk and breathe easy</title>
+<meta name="description" content="Hour-by-hour plan for when to open windows, exercise and commute, based on the air quality forecast and who you are.">
+<style>
+:root{
+  --fog:#e8eff1; --pane:#f6fafb; --ink:#0d2b35; --ink-soft:#44606a; --frame:#0d2b35;
+  --good:#2f8f83; --moderate:#c9a227; --sensitive:#e07b2e; --unhealthy:#c8403a; --very_unhealthy:#8e3b8c; --hazardous:#5b1a3a;
+  --focus:#1459d9;
+}
+*{box-sizing:border-box}
+html{font-size:100%}
+body{margin:0;background:var(--fog);color:var(--ink);font-family:system-ui,"Segoe UI","Noto Sans","Noto Sans Telugu","Noto Sans Devanagari",sans-serif;line-height:1.5}
+a,button,input,select{font:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.wrap{max-width:68rem;margin:0 auto;padding:0 1.25rem}
+header{padding:1.1rem 0 .9rem;border-bottom:1px solid #c5d3d8}
+.brand{font-weight:700;letter-spacing:-.01em;font-size:1.15rem;margin:0 0 .7rem}
+form.controls{display:flex;flex-wrap:wrap;gap:.6rem .8rem;align-items:end}
+.field{display:flex;flex-direction:column;gap:.15rem;font-size:.85rem;color:var(--ink-soft)}
+.field input,.field select{min-height:2.5rem;padding:.35rem .6rem;border:1px solid #9fb3ba;border-radius:.35rem;background:var(--pane);color:var(--ink)}
+.field input{width:12.5rem}
+button{min-height:2.5rem;padding:.35rem 1rem;border:0;border-radius:.35rem;background:var(--ink);color:#fff;font-weight:600;cursor:pointer}
+button.quiet{background:transparent;color:var(--ink);border:1px solid #9fb3ba;font-weight:500}
+button:disabled{opacity:.6;cursor:progress}
+
+.hero{padding:2.2rem 0 1.4rem}
+.place{margin:0 0 .4rem;color:var(--ink-soft);font-size:.95rem}
+h1{margin:0;font-size:clamp(1.7rem,4.6vw,3rem);line-height:1.12;letter-spacing:-.02em;font-weight:650;max-width:24ch}
+.now{margin:.9rem 0 0;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+.chip{display:inline-block;padding:.15rem .6rem;border-radius:99px;color:#fff;font-weight:600;font-size:.9rem}
+
+/* The window: 24 hours as panes inside a frame. Bar height = how bad the air is for YOU. */
+.window{border:6px solid var(--frame);background:var(--pane);padding:.6rem .6rem 0;position:relative}
+.panes{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;height:13rem;align-items:end;position:relative}
+.panes::before,.panes::after{content:"";position:absolute;top:0;bottom:0;width:4px;background:var(--frame);opacity:.85;z-index:1}
+.panes::before{left:25%;transform:translateX(-2px)}
+.panes::after{left:75%;transform:translateX(-2px)}
+.mullion{position:absolute;top:0;bottom:0;left:50%;width:4px;background:var(--frame);opacity:.85;transform:translateX(-2px);z-index:1}
+.col{display:flex;flex-direction:column;justify-content:flex-end;height:100%;position:relative}
+.col .bar{width:100%;border-radius:2px 2px 0 0;min-height:4px;transition:height .45s ease}
+.col .sash{height:.55rem;margin-bottom:3px;border-radius:2px;background:repeating-linear-gradient(90deg,#9dd2e6 0 4px,#c8e7f2 4px 8px)}
+.col .sash.shut{background:transparent;border-bottom:3px solid #b4c3c8}
+.hours{display:grid;grid-template-columns:repeat(24,1fr);font-size:.72rem;color:var(--ink-soft);padding:.35rem 0 .45rem}
+.hours span{text-align:center}
+.legend{display:flex;flex-wrap:wrap;gap:.4rem 1.1rem;margin:.8rem 0 0;font-size:.85rem;color:var(--ink-soft)}
+.legend i{display:inline-block;width:.8rem;height:.8rem;margin-right:.35rem;vertical-align:-1px;border-radius:2px}
+.cap{margin:.7rem 0 0;color:var(--ink-soft);font-size:.9rem;max-width:60ch}
+
+.plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:2rem;padding:2rem 0}
+.plan section{border-top:5px solid var(--ink);padding-top:.7rem}
+.plan h2{margin:0 0 .4rem;font-size:1.05rem}
+.plan ul{margin:0;padding-left:1.1rem}
+.plan li{margin:.25rem 0}
+.plan p{margin:.2rem 0}
+
+.alerts{background:var(--pane);border-top:1px solid #c5d3d8;border-bottom:1px solid #c5d3d8;padding:1.6rem 0}
+.alerts h2{margin:0 0 .3rem;font-size:1.2rem}
+.alerts p{margin:.1rem 0 .9rem;color:var(--ink-soft);max-width:55ch}
+.alerts form{display:flex;flex-wrap:wrap;gap:.6rem;align-items:end}
+.msg{margin-top:.6rem;font-weight:600}
+.error{color:#a3231d;font-weight:600}
+footer{padding:1.4rem 0 2.5rem;color:var(--ink-soft);font-size:.85rem;max-width:68rem}
+.brief{margin:1rem 0 0;max-width:62ch;font-size:1.05rem}
+@media (max-width:40rem){.panes{height:10rem}.hours span:not(:nth-child(4n+1)){visibility:hidden}.field input{width:100%}.field{flex:1 1 9rem}}
+@media (prefers-reduced-motion:reduce){.col .bar{transition:none}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <p class="brand">AirWindow</p>
+  <form class="controls" id="controls">
+    <label class="field">City<input id="city" name="city" value="Hyderabad" autocomplete="off" maxlength="80"></label>
+    <button type="button" class="quiet" id="geo">Use my location</button>
+    <label class="field">Who is this for
+      <select id="profile">
+        <option value="general">Healthy adult</option>
+        <option value="child">Child</option>
+        <option value="elderly">Older adult</option>
+        <option value="pregnant">Pregnant</option>
+        <option value="respiratory">Asthma or lung condition</option>
+        <option value="outdoor_worker">Works outdoors</option>
+      </select></label>
+    <label class="field">Activity
+      <select id="activity">
+        <option value="walk">Walk</option>
+        <option value="run">Run or sport</option>
+        <option value="commute">Commute</option>
+        <option value="rest">None</option>
+      </select></label>
+    <label class="field">Tips in
+      <select id="lang">
+        <option value="en">English</option><option value="hi">हिन्दी</option><option value="te">తెలుగు</option>
+        <option value="ta">தமிழ்</option><option value="bn">বাংলা</option><option value="mr">मराठी</option>
+        <option value="gu">ગુજરાતી</option><option value="kn">ಕನ್ನಡ</option><option value="ml">മലയാളം</option>
+        <option value="pa">ਪੰਜਾਬੀ</option><option value="ur">اردو</option>
+      </select></label>
+    <button type="submit" id="go">Show my plan</button>
+  </form>
+</div></header>
+
+<main class="wrap">
+  <section class="hero" aria-live="polite">
+    <p class="place" id="place">&nbsp;</p>
+    <h1 id="headline">Checking the air for the next 24 hours…</h1>
+    <p class="now" id="now"></p>
+    <p class="brief" id="brief" hidden></p>
+  </section>
+
+  <section aria-label="Next 24 hours">
+    <div class="window" id="window" role="img" aria-label="Chart of the next 24 hours of air quality">
+      <div class="panes" id="panes"></div>
+      <div class="hours" id="hours"></div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <p class="cap">Taller bars mean worse air for the person you picked. A blue strip above a bar means the window can be open that hour.</p>
+  </section>
+
+  <div class="plan" id="plan" hidden>
+    <section><h2>Windows</h2><div id="p-windows"></div></section>
+    <section><h2>Your activity</h2><div id="p-activity"></div></section>
+    <section><h2>Right now</h2><div id="p-now"></div></section>
+  </div>
+</main>
+
+<div class="alerts"><div class="wrap">
+  <h2>Get an email when the air turns bad</h2>
+  <p>We check the forecast every few hours and write to you only when it is worth it. Uses the city and person selected above.</p>
+  <form id="sub">
+    <label class="field">Email<input type="email" id="email" required autocomplete="email" maxlength="200"></label>
+    <button type="submit">Email me alerts</button>
+  </form>
+  <div class="msg" id="submsg" role="status"></div>
+</div></div>
+
+<footer class="wrap">
+  Forecast from Open-Meteo (CAMS). Live station check via TinyFish when available. Plans use the US AQI scale. This is general guidance, not medical advice; follow your doctor's advice if you have a health condition.
+</footer>
+
+<script>
+const COLORS={good:"#2f8f83",moderate:"#c9a227",sensitive:"#e07b2e",unhealthy:"#c8403a",very_unhealthy:"#8e3b8c",hazardous:"#5b1a3a"};
+const NAMES={good:"Good",moderate:"Moderate",sensitive:"Unhealthy for you",unhealthy:"Unhealthy",very_unhealthy:"Very unhealthy",hazardous:"Hazardous"};
+const $=id=>document.getElementById(id);
+let coords=null;
+
+function legend(){
+  $("legend").replaceChildren(...Object.keys(COLORS).map(k=>{
+    const s=document.createElement("span");const i=document.createElement("i");i.style.background=COLORS[k];
+    s.append(i,NAMES[k]);return s;}));
+}
+function fmt(iso){return iso.slice(11,16)}
+function fmtRange(r){return `${fmt(r.start)}–${fmt(r.end)}`}
+
+function render(d){
+  const p=d.plan, place=d.place;
+  $("place").textContent=[place.name,place.admin1,place.country].filter(Boolean).join(", ");
+  $("headline").textContent=d.tips[0]||"No plan available";
+  $("headline").classList.remove("error");
+  const now=$("now");now.replaceChildren();
+  const chip=document.createElement("span");chip.className="chip";chip.style.background=COLORS[p.now.level];
+  chip.textContent=NAMES[p.now.level];
+  const t=document.createElement("span");
+  t.textContent=`AQI ${p.now.aqi} now`+(p.ground_truth?`, station reads ${p.ground_truth.station_aqi}`:"");
+  now.append(chip,t);
+  const b=$("brief");if(d.briefing){b.textContent=d.briefing;b.hidden=false}else{b.hidden=true}
+
+  const panes=$("panes"),hours=$("hours");panes.replaceChildren();hours.replaceChildren();
+  const mull=document.createElement("div");mull.className="mullion";panes.append(mull);
+  p.strip.forEach(h=>{
+    const col=document.createElement("div");col.className="col";
+    col.title=`${fmt(h.time)}  AQI ${h.aqi}  ${h.window==="open"?"window can be open":"keep window shut"}`;
+    const sash=document.createElement("div");sash.className="sash"+(h.window==="open"?"":" shut");
+    const bar=document.createElement("div");bar.className="bar";bar.style.background=COLORS[h.level];
+    bar.style.height="0%";col.append(sash,bar);panes.append(col);
+    requestAnimationFrame(()=>{bar.style.height=Math.max(3,Math.min(100,h.effective_aqi/300*100))+"%"});
+    const l=document.createElement("span");l.textContent=String(h.hour).padStart(2,"0");hours.append(l);
+  });
+  $("window").setAttribute("aria-label","Next 24 hours. "+d.tips.join(" "));
+
+  const w=$("p-windows");w.replaceChildren();
+  const v=p.ventilation;
+  if(v.open_ranges.length){
+    const ul=document.createElement("ul");
+    v.open_ranges.forEach(r=>{const li=document.createElement("li");li.textContent="Open: "+fmtRange(r);ul.append(li)});
+    w.append(ul);
+  }else{
+    w.textContent=v.purge?`No safe hours today. Air the room for ${v.purge.minutes} minutes at ${fmt(v.purge.time)}.`:"No safe hours today. Keep windows shut.";
+  }
+  const a=$("p-activity");a.replaceChildren();
+  if(p.activity){
+    const ul=document.createElement("ul");
+    p.activity.best.forEach(x=>{const li=document.createElement("li");li.textContent=`${fmtRange(x)}, AQI about ${x.mean_aqi}${x.ok?"":" (borderline)"}`;ul.append(li)});
+    if(p.activity.best.length)a.append(ul);
+    const s=document.createElement("p");
+    s.textContent={go:"Good hours exist.",limit:"Borderline today. Keep it short and easy.",avoid:"Better indoors today."}[p.activity.verdict];
+    a.append(s);
+  }else a.textContent="No activity selected.";
+  const n=$("p-now");n.replaceChildren();
+  const rows=[`Mask outdoors: ${{none:"not needed",consider:"consider an N95",n95:"wear an N95"}[p.mask]}`,
+              `Next few hours: ${{steady:"about the same",worsening:"getting worse",improving:"getting better"}[p.trend]}`];
+  d.tips.slice(1).forEach(x=>rows.push(x));
+  const ul=document.createElement("ul");rows.forEach(x=>{const li=document.createElement("li");li.textContent=x;ul.append(li)});n.append(ul);
+  $("plan").hidden=false;
+}
+
+async function load(){
+  const q=new URLSearchParams({profile:$("profile").value,activity:$("activity").value,lang:$("lang").value});
+  if(coords){q.set("lat",coords.lat);q.set("lon",coords.lon)}else q.set("city",$("city").value.trim());
+  $("go").disabled=true;
+  try{
+    const r=await fetch("api/plan?"+q);const d=await r.json();
+    if(!r.ok)throw new Error(d.error||"Request failed");
+    render(d);
+  }catch(e){
+    $("headline").textContent=e.message;$("headline").classList.add("error");$("plan").hidden=true;
+  }finally{$("go").disabled=false}
+}
+
+$("controls").addEventListener("submit",e=>{e.preventDefault();coords=null;load()});
+$("geo").addEventListener("click",()=>{
+  if(!navigator.geolocation){alert("Location is not available in this browser.");return}
+  navigator.geolocation.getCurrentPosition(pos=>{
+    coords={lat:pos.coords.latitude.toFixed(3),lon:pos.coords.longitude.toFixed(3)};
+    $("city").value="";load();
+  },()=>alert("Could not read your location. Type a city instead."));
+});
+["profile","activity","lang"].forEach(id=>$(id).addEventListener("change",load));
+$("sub").addEventListener("submit",async e=>{
+  e.preventDefault();const m=$("submsg");m.className="msg";m.textContent="Sending…";
+  const city=$("city").value.trim();
+  if(!city){m.className="msg error";m.textContent="Type a city name above first.";return}
+  try{
+    const r=await fetch("api/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email:$("email").value.trim(),city,profile:$("profile").value})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error||"Could not subscribe");
+    m.textContent=d.message;
+  }catch(err){m.className="msg error";m.textContent=err.message}
+});
+legend();load();
+</script>
+</body>
+</html>
